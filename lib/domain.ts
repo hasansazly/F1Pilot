@@ -1,32 +1,819 @@
-export const OFFICIAL = { title: 'USCIS · Optional Practical Training', url: 'https://www.uscis.gov/working-in-the-united-states/students-and-exchange-visitors/optional-practical-training-opt-for-f-1-students', reviewed: '2026-09-12', effective: 'Not independently verified; demonstration only', confidence: 'Requires verification' };
-export const RULE = { id: 'opt-preparation', version: 'demo-1.0.0', jurisdiction: 'US', stage: 'F-1 / post-completion preparation', requiredInputs: ['programEnd'], review: 'Requires DSO verification', effective: 'Demonstration, not a legal effective period', nextReview: '2026-10-12', offsets: { preparation: -105, opens: -90, closes: 60, recommendation: 30 }, source: OFFICIAL };
-export type Fact = { id:string; key:string; value:string; originalValue:string; artifactId:string; page:number; line:number; quote:string; confidence:number; status:'proposed'|'confirmed'|'superseded'; createdAt:string; confirmedAt?:string; effectiveDate:string; sensitivity:'personal'; history:{value:string;at:string}[] };
-export type Artifact = {id:string;name:string;category:string;text:string;mime:string;blob?:string;version:number;createdAt:string;status:string;supersedes?:string};
-export type Message = {id:string;subject:string;text:string;category:string;dates:string[];requirements:string[];links:string[];office:string;status:'proposed'|'approved'|'rejected';createdAt:string};
-export type Event = {id:string;title:string;date:string;kind:string;explanation:string;factIds:string[];source:string;ruleVersion:string;confidence:string;status:string};
-export type Action = {id:string;title:string;body:string;recipient:string;status:'draft'|'approved'|'cancelled';createdAt:string;decidedAt?:string;result?:string};
-export type Card = {id:string;title:string;why:string;severity:'amber'|'rose'|'violet'|'blue'|'green';type:string;deadline?:string;factIds:string[];artifactIds:string[];confidence:string;next:string;destination:string};
-export type Workspace = {revision:number;demo:boolean;profile:{name:string;institution:string;stage:'OPT'|'CPT';degree:string;dso:string};artifacts:Artifact[];facts:Fact[];messages:Message[];events:Event[];actions:Action[];activity:{id:string;at:string;title:string;detail:string}[];requirements:{id:string;title:string;status:string;evidence:string;updatedAt:string}[];dismissed:Record<string,string>;snapshots:{at:string;events:Event[]}[];chats:{id:string;question:string;answer:string;at:string}[];employment:{employer:string;title:string;start:string;hours:string;relevance:string};travel:{passportExpiry:string;visaExpiry:string;signatureDate:string;departure:string;notes:string};consents:{at:string;description:string}[];retention:'until-deleted'|'90-days';lastRun?:string};
-export const uid=()=>crypto.randomUUID();
-export const now=()=>new Date().toISOString();
-export function dateValid(s:string){return /^\d{4}-\d{2}-\d{2}$/.test(s)&&!Number.isNaN(Date.parse(s))&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;}
-export function addDays(s:string,n:number){if(!dateValid(s))throw new Error('Invalid calendar date');const d=new Date(s+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);}
-export function daysUntil(s:string,today=now().slice(0,10)){return Math.round((Date.parse(s)-Date.parse(today))/86400000);}
-export const labels:Record<string,string>={name:'Student name',institution:'Institution',degree:'Degree / major',programStart:'Program start',programEnd:'Program end',recommendationDate:'DSO recommendation date'};
-export function emptyWorkspace(name:string):Workspace{return {revision:0,demo:false,profile:{name,institution:'',stage:'OPT',degree:'',dso:''},artifacts:[],facts:[],messages:[],events:[],actions:[],activity:[],requirements:[{id:'i20',title:'Confirm your current I-20',status:'Missing',evidence:'',updatedAt:now()},{id:'dso',title:'Request your DSO preparation checklist',status:'Missing',evidence:'',updatedAt:now()},{id:'offer',title:'Collect degree-relevance evidence',status:'Missing',evidence:'',updatedAt:now()}],dismissed:{},snapshots:[],chats:[],employment:{employer:'',title:'',start:'',hours:'',relevance:''},travel:{passportExpiry:'',visaExpiry:'',signatureDate:'',departure:'',notes:''},consents:[{at:now(),description:'Agreed to private storage and preparation-only product boundaries at account creation.'}],retention:'until-deleted'};}
-export function log(w:Workspace,title:string,detail=''){w.activity.unshift({id:uid(),at:now(),title,detail});}
-export function sampleI20(end=addDays(now().slice(0,10),98)){return `FICTIONAL SAMPLE — NOT A GOVERNMENT DOCUMENT\nF1Pilot I-20 learning fixture\nStudent name: Maya Chen\nInstitution: Northstar University (fictional)\nDegree: MS Computer Science\nProgram start: ${addDays(end,-730)}\nProgram end: ${end}\nThis fixture contains no SEVIS identifier.\nConfirm each field against its source before preparing a timeline.`;}
-export function extract(text:string,artifactId:string):Fact[]{const fields:Record<string,string>={'Student name':'name','Institution':'institution','School name':'institution','Degree':'degree','Program start':'programStart','Program end':'programEnd','Program end date':'programEnd','DSO recommendation date':'recommendationDate'};const facts:Fact[]=[];text.split('\f').forEach((page,p)=>page.split('\n').forEach((line,l)=>{for(const [label,key] of Object.entries(fields)){const match=line.match(new RegExp('^\\s*'+label+'\\s*:\\s*(.+)$','i'));if(match){const value=match[1].trim();if((key.includes('Date')||key.startsWith('program'))&&!dateValid(value))continue;facts.push({id:uid(),key,value,originalValue:value,artifactId,page:p+1,line:l+1,quote:line,confidence:.88,status:'proposed',createdAt:now(),effectiveDate:now().slice(0,10),sensitivity:'personal',history:[]});break;}}}));return facts;}
-export function addArtifact(w:Workspace,name:string,text:string,category='I-20',mime='text/plain',blob?:string){const prev=w.artifacts.filter(a=>a.category===category).at(-1);const a:Artifact={id:uid(),name,text,category,mime,blob,createdAt:now(),version:(prev?.version??0)+1,status:'Awaiting review',supersedes:prev?.id};w.artifacts.push(a);log(w,'Reading document',`${category} · version ${a.version}`);const facts=category==='I-20'?extract(text,a.id):[];w.facts.push(...facts);a.status=facts.length?'Awaiting confirmation':'Manual review needed';log(w,'Extracting facts',`${facts.length} proposed fields; no profile changes applied.`);return a;}
-export function confirmFact(w:Workspace,id:string,value:string){const f=w.facts.find(f=>f.id===id);if(!f||f.status==='superseded')throw new Error('Fact not found');if(!value.trim()||value.length>300)throw new Error('Enter a valid value');if((f.key.startsWith('program')||f.key==='recommendationDate')&&!dateValid(value))throw new Error('Use a valid YYYY-MM-DD date');const start=f.key==='programStart'?value:confirmed(w,'programStart')?.value;const end=f.key==='programEnd'?value:confirmed(w,'programEnd')?.value;if(start&&end&&start>=end)throw new Error('Program end must follow program start');for(const old of w.facts.filter(x=>x.key===f.key&&x.id!==id&&x.status==='confirmed')){old.status='superseded';old.history.push({value:old.value,at:now()});}f.history.push({value:f.value,at:now()});f.value=value;f.status='confirmed';f.confirmedAt=now();if(f.key==='institution'||f.key==='degree'||f.key==='name')w.profile[f.key]=value;const artifact=w.artifacts.find(a=>a.id===f.artifactId);if(artifact)artifact.status=w.facts.some(x=>x.artifactId===artifact.id&&x.status==='proposed')?'Awaiting confirmation':'Reviewed';log(w,'Fact confirmed',`${labels[f.key]||f.key} · source preserved; timeline recalculated.`);recalculate(w);}
-export function confirmed(w:Workspace,key:string){return w.facts.find(f=>f.key===key&&f.status==='confirmed');}
-export function recalculate(w:Workspace){if(w.events.length)w.snapshots.push({at:now(),events:structuredClone(w.events)});const end=confirmed(w,'programEnd');const start=confirmed(w,'programStart');const events:Event[]=[];const push=(id:string,title:string,date:string,explanation:string,factIds:string[],kind='Preparation',source=OFFICIAL.url)=>events.push({id,title,date,explanation,factIds,kind,source,ruleVersion:RULE.version,confidence:'Requires verification',status:'Upcoming'});if(start)push('start','Program begins',start.value,'Confirmed document value.',[start.id],'Program',start.artifactId);if(end){if(w.profile.stage==='OPT'){push('prepare','Prepare your OPT questions',addDays(end.value,RULE.offsets.preparation),'Personal preparation buffer: confirmed program end minus 105 days. Configured demonstration offset, not a filing deadline.',[end.id]);push('opens','Illustrative OPT filing window opens',addDays(end.value,RULE.offsets.opens),'Demonstration: program end minus 90 calendar days. Verify current rules and individual circumstances with your DSO.',[end.id],'Government · verify');push('closes','Illustrative outer filing boundary',addDays(end.value,RULE.offsets.closes),'Demonstration: program end plus 60 days. This is NOT a personalized final deadline; DSO recommendation timing and current rules can shorten it.',[end.id],'Government · verify');const rec=confirmed(w,'recommendationDate');if(rec)push('recommendation','Illustrative recommendation boundary',addDays(rec.value,30),'Demonstration: confirmed recommendation date plus 30 calendar days. Compare both boundaries with your DSO; no eligibility determination.',[end.id,rec.id],'Government · verify');}else push('cpt','Discuss your CPT preparation plan',addDays(end.value,-60),'Personal planning buffer: program end minus 60 days. CPT dates and requirements must be set by your DSO; this is not an authorization calculation.',[end.id]);push('end','Program end date',end.value,'Confirmed I-20 field, with original source retained.',[end.id],'Program',end.artifactId);}
-for(const m of w.messages.filter(m=>m.status==='approved'))m.dates.forEach((date,i)=>push(`${m.id}-${i}`,m.subject,date,'Explicitly approved date from imported message. Meaning and applicability require review. Original message retained.',[],'University · user reviewed',m.id));if(w.employment.start)push('offer','Requested employment start',w.employment.start,'User-entered offer date; does not establish employment authorization.',[],'Employment','User entry');if(w.travel.departure)push('travel','Planned departure',w.travel.departure,'User-entered itinerary; discuss travel evidence with your DSO.',[],'Travel','User entry');w.events=events.sort((a,b)=>a.date.localeCompare(b.date));const req=w.requirements.find(r=>r.id==='i20');if(req){req.status=end?'Completed':'Missing';req.evidence=end?end.artifactId:'';}log(w,'Recalculating timeline',`${events.length} explainable events from confirmed evidence.`);}
-export function importMessage(w:Workspace,subject:string,text:string){const dates=[...new Set(text.match(/\b\d{4}-\d{2}-\d{2}\b/g)||[])].filter(dateValid);const requirements=text.split('\n').filter(l=>/must|required|please|submit|bring/i.test(l));const category=/policy|rule change/i.test(text)?'Policy change':dates.length?'Deadline':/required|submit/i.test(text)?'Action required':/opportunity|workshop/i.test(text)?'Opportunity':'Routine information';const m:Message={id:uid(),subject,text,dates,requirements,links:text.match(/https:\/\/[^\s<>]+/g)||[],office:text.match(/(?:From|Office):\s*(.+)/i)?.[1]||'Unverified sender',category,status:'proposed',createdAt:now()};w.messages.unshift(m);log(w,'Message reviewed',`${dates.length} proposed dates · waiting for student approval.`);return m;}
-export function cards(w:Workspace,today=now().slice(0,10)):Card[]{const result:Card[]=[];const pending=w.facts.filter(f=>f.status==='proposed');if(pending.length)result.push({id:'review',title:'Your I-20 has something to confirm.',why:`${pending.length} extracted fields are waiting for your review. They will not change your timeline until confirmed.`,severity:'violet',type:'Confirmation needed',factIds:pending.map(f=>f.id),artifactIds:[...new Set(pending.map(f=>f.artifactId))],confidence:'Proposed extraction · 88%',next:'Review the highlighted source and confirm each field.',destination:'Documents'});const conflicts=pending.filter(f=>confirmed(w,f.key)&&confirmed(w,f.key)?.value!==f.value);if(conflicts.length)result.push({id:'conflict',title:'Two sources tell different stories.',why:'New document evidence differs from a confirmed field. Your verified timeline has been preserved.',severity:'rose',type:'Conflicting evidence',factIds:conflicts.flatMap(f=>[f.id,confirmed(w,f.key)!.id]),artifactIds:conflicts.map(f=>f.artifactId),confidence:'High · exact value comparison',next:'Compare both sources. Ask your DSO if the newer document supersedes the older one.',destination:'Documents'});const next=w.events.find(e=>daysUntil(e.date,today)>=0&&daysUntil(e.date,today)<=30);if(next)result.push({id:`deadline-${next.id}`,title:'A date worth getting ahead of.',why:`${next.title} is ${daysUntil(next.date,today)} days away. ${next.explanation}`,severity:'amber',type:'Upcoming date',deadline:next.date,factIds:next.factIds,artifactIds:[],confidence:next.confidence,next:'Inspect the calculation and prepare a question for your DSO.',destination:'Timeline'});if(w.requirements.some(r=>r.status==='Missing'))result.push({id:'missing',title:'Let’s close the gaps in your plan.',why:`${w.requirements.filter(r=>r.status==='Missing').length} preparation requirements still need evidence.`,severity:'blue',type:'Missing requirement',factIds:[],artifactIds:[],confidence:'High · stored checklist state',next:'Collect the missing evidence or prepare a DSO email.',destination:'Requirements'});if(w.messages.some(m=>m.status==='proposed'))result.push({id:'inbox',title:'Your university has an update.',why:'An imported message contains proposed information. Review the original before adding dates to your plan.',severity:'violet',type:'Inbox review',factIds:[],artifactIds:[],confidence:'Unverified university content',next:'Review the message and approve or reject its dates.',destination:'Inbox'});const stale=w.artifacts.filter(a=>daysUntil(a.createdAt.slice(0,10),today)<-180);if(stale.length)result.push({id:'stale',title:'Check that these documents are current.',why:`${stale.length} documents were uploaded over 180 days ago. Age alone does not establish expiration.`,severity:'amber',type:'Document freshness',factIds:[],artifactIds:stale.map(a=>a.id),confidence:'High · upload age only',next:'Compare against your latest document and ask your DSO.',destination:'Documents'});const end=confirmed(w,'programEnd');if(end&&w.profile.stage==='OPT'&&w.employment.start&&w.employment.start<end.value)result.push({id:'offer-conflict',title:'Your offer starts before your program ends.',why:'The requested offer date precedes your confirmed program end during an OPT preparation workflow. This needs professional review.',severity:'rose',type:'Professional review',deadline:w.employment.start,factIds:[end.id],artifactIds:[end.artifactId],confidence:'High · date comparison only',next:'Ask your DSO and employer about the date discrepancy.',destination:'Employment'});if(w.actions.some(a=>a.status==='approved'&&daysUntil(a.decidedAt!.slice(0,10),today)<-7))result.push({id:'waiting',title:'Ready to follow up?',why:'A locally approved draft is over seven days old. F1Pilot has no evidence it was sent or answered.',severity:'blue',type:'Follow-up check',factIds:[],artifactIds:[],confidence:'Local activity only',next:'Check your mailbox before preparing a follow-up.',destination:'Activity'});return result.filter(c=>!w.dismissed[c.id]||w.dismissed[c.id]<today);}
-export function evaluate(w:Workspace){log(w,'Comparing evidence',`${w.facts.filter(f=>f.status==='confirmed').length} confirmed facts checked.`);recalculate(w);log(w,'Checking requirements',`${w.requirements.length} requirements checked.`);const generated=cards(w);log(w,'Preparing recommendations',`${generated.length} active cards generated from stored state.`);w.lastRun=now();log(w,'Evaluation completed','No external actions executed.');return generated;}
-export function prepare(w:Workspace,topic:string){const a:Action={id:uid(),title:`DSO question: ${topic.slice(0,100)}`,recipient:w.profile.dso,body:`Hello,\n\nI am preparing for ${w.profile.stage} and would appreciate your guidance on: ${topic}.\n\n${confirmed(w,'programEnd')?`My confirmed I-20 program end date is ${confirmed(w,'programEnd')!.value}.`:'I still need to confirm my program dates.'}\n\nCould you confirm the current university requirements, relevant dates, and any documents I should prepare? I understand this preparation timeline is illustrative and needs your review.\n\nThank you,\n${w.profile.name}`,status:'draft',createdAt:now()};w.actions.unshift(a);log(w,'Email draft prepared','Waiting for explicit review. No email sent.');return a;}
-export function decide(w:Workspace,id:string,decision:'approved'|'cancelled'){const a=w.actions.find(a=>a.id===id);if(!a||a.status!=='draft')throw new Error('Only a pending draft can be decided');a.status=decision;a.decidedAt=now();a.result=decision==='approved'?'Approved locally. Download the draft and send it yourself; no email service is connected.':'Cancelled. No external action taken.';log(w,decision==='approved'?'Email draft approved':'Email draft cancelled',a.result);}
-export function answer(w:Workspace,q:string){if(/guarantee|am i eligible|am i authorized|legally|will.*approv/i.test(q))return 'I cannot determine eligibility, employment authorization, or guarantee an outcome. Ask your DSO or a qualified immigration professional to review your circumstances. [1]\n\n[1] USCIS official guidance: '+OFFICIAL.url+'\nSource status: requires verification; legal effective date not verified.';const key=/start/i.test(q)?'programStart':'programEnd';const f=confirmed(w,key);const relevant=w.events.filter(e=>e.factIds.includes(f?.id||'')).map(e=>`${e.title}: ${e.date} — ${e.explanation} [2]`).join('\n');return `${f?`Verified personal fact: ${labels[key]} is ${f.value}. [1]`:'Missing information: confirm your I-20 program dates before relying on a preparation timeline.'}\n\n${/cpt/i.test(q)?'CPT preparation: collect your offer details and degree-relevance evidence, then ask your DSO for institution-specific instructions. No CPT authorization determination is made. [2]':relevant||'Review your Documents and Requirements to build an evidence-backed plan.'}\n\nAssumptions: your confirmed document is current; dates are illustrative and need DSO review. The local assistant retrieves stored evidence and approved source references; it does not browse or use a language model.\n\n${f?`[1] ${w.artifacts.find(a=>a.id===f.artifactId)?.name}, page ${f.page}, line ${f.line}; confirmed ${f.confirmedAt?.slice(0,10)}.\n`:''}[2] ${OFFICIAL.title}: ${OFFICIAL.url}\nRule ${RULE.version}; effective period: demonstration only; confidence: requires verification. Ask your DSO for current guidance.`;}
-export function deleteArtifact(w:Workspace,id:string){if(!w.artifacts.some(a=>a.id===id))throw new Error('Document not found');w.artifacts=w.artifacts.filter(a=>a.id!==id);w.facts=w.facts.filter(f=>f.artifactId!==id);for(const a of w.artifacts)if(a.supersedes===id)delete a.supersedes;w.snapshots=[];w.chats=[];w.actions=[];for(const r of w.requirements)if(r.evidence===id){r.evidence='';r.status='Missing';}for(const key of ['name','institution','degree'] as const){if(!confirmed(w,key))w.profile[key]=key==='name'?'Student':'';}w.events=[];recalculate(w);log(w,'Document permanently deleted','Dependent facts, timeline history, chats and drafts removed to prevent retained evidence copies.');}
-export function seedWorkspace(){const w=emptyWorkspace('Maya Chen');w.demo=true;w.profile={name:'Maya Chen',institution:'Northstar University (fictional)',stage:'OPT',degree:'MS Computer Science',dso:'dso@northstar.example'};const end=addDays(now().slice(0,10),98);const a=addArtifact(w,'Maya_I-20_sample.txt',sampleI20(end));for(const f of [...w.facts])confirmFact(w,f.id,f.value);const revised=addArtifact(w,'Updated_I-20_sample.txt',sampleI20(addDays(end,7)));w.facts=w.facts.filter(f=>f.artifactId!==revised.id||f.key==='programEnd');const m=importMessage(w,'Complete your OPT preparation workshop',`From: Northstar International Student Office (fictional)\nPlease complete our preparation workshop by ${addDays(now().slice(0,10),12)}.\nRequired: current I-20 and degree completion checklist.\nProgram end mentioned by office: ${addDays(end,7)}\nThis fictional instruction is for the demo only.`);m.status='approved';m.dates=m.dates.slice(0,1);w.requirements.push({id:'workshop',title:'Complete Northstar’s OPT workshop (fictional)',status:'Missing',evidence:m.id,updatedAt:now()});w.employment={employer:'Aster Labs (fictional)',title:'Software engineering intern',start:addDays(end,-10),hours:'20',relevance:'Draft: distributed systems work related to computer science coursework.'};addArtifact(w,'Aster_offer_sample.txt',`FICTIONAL OFFER\nEmployer: Aster Labs\nStart: ${w.employment.start}\nRole: Software engineering intern`,'Offer letter');const action=prepare(w,'Which documents should I bring to my appointment?');decide(w,action.id,'approved');w.requirements[0].evidence=a.id;evaluate(w);return w;}
+export const OFFICIAL = {
+  title: "USCIS · Optional Practical Training",
+  url: "https://www.uscis.gov/working-in-the-united-states/students-and-exchange-visitors/optional-practical-training-opt-for-f-1-students",
+  reviewed: "2026-09-12",
+  effective: "Not independently verified; demonstration only",
+  confidence: "Requires verification",
+};
+export const RULE = {
+  id: "opt-preparation",
+  version: "demo-1.0.0",
+  jurisdiction: "US",
+  stage: "F-1 / post-completion preparation",
+  requiredInputs: ["programEnd"],
+  review: "Requires DSO verification",
+  effective: "Demonstration, not a legal effective period",
+  nextReview: "2026-10-12",
+  offsets: { preparation: -105, opens: -90, closes: 60, recommendation: 30 },
+  source: OFFICIAL,
+};
+export type Fact = {
+  id: string;
+  key: string;
+  value: string;
+  originalValue: string;
+  artifactId: string;
+  page: number;
+  line: number;
+  quote: string;
+  confidence: number;
+  status: "proposed" | "confirmed" | "superseded";
+  createdAt: string;
+  confirmedAt?: string;
+  effectiveDate: string;
+  sensitivity: "personal";
+  history: { value: string; at: string }[];
+};
+export type Artifact = {
+  id: string;
+  name: string;
+  category: string;
+  text: string;
+  mime: string;
+  blob?: string;
+  version: number;
+  createdAt: string;
+  status: string;
+  supersedes?: string;
+};
+export type Message = {
+  id: string;
+  subject: string;
+  text: string;
+  category: string;
+  dates: string[];
+  requirements: string[];
+  links: string[];
+  office: string;
+  status: "proposed" | "approved" | "rejected";
+  createdAt: string;
+};
+export type Event = {
+  id: string;
+  title: string;
+  date: string;
+  kind: string;
+  explanation: string;
+  factIds: string[];
+  source: string;
+  ruleVersion: string;
+  confidence: string;
+  status: string;
+};
+export type Action = {
+  id: string;
+  title: string;
+  body: string;
+  recipient: string;
+  status: "draft" | "approved" | "cancelled";
+  createdAt: string;
+  decidedAt?: string;
+  result?: string;
+};
+export type Card = {
+  id: string;
+  title: string;
+  why: string;
+  severity: "amber" | "rose" | "violet" | "blue" | "green";
+  type: string;
+  deadline?: string;
+  factIds: string[];
+  artifactIds: string[];
+  confidence: string;
+  next: string;
+  destination: string;
+};
+export type Workspace = {
+  revision: number;
+  demo: boolean;
+  profile: {
+    name: string;
+    institution: string;
+    stage: "OPT" | "CPT";
+    degree: string;
+    dso: string;
+  };
+  artifacts: Artifact[];
+  facts: Fact[];
+  messages: Message[];
+  events: Event[];
+  actions: Action[];
+  activity: { id: string; at: string; title: string; detail: string }[];
+  requirements: {
+    id: string;
+    title: string;
+    status: string;
+    evidence: string;
+    updatedAt: string;
+  }[];
+  dismissed: Record<string, string>;
+  snapshots: { at: string; events: Event[] }[];
+  chats: { id: string; question: string; answer: string; at: string }[];
+  employment: {
+    employer: string;
+    title: string;
+    start: string;
+    hours: string;
+    relevance: string;
+  };
+  travel: {
+    passportExpiry: string;
+    visaExpiry: string;
+    signatureDate: string;
+    departure: string;
+    notes: string;
+  };
+  consents: { at: string; description: string }[];
+  retention: "until-deleted" | "90-days";
+  lastRun?: string;
+};
+export const uid = () => crypto.randomUUID();
+export const now = () => new Date().toISOString();
+export function dateValid(s: string) {
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(s) &&
+    !Number.isNaN(Date.parse(s)) &&
+    new Date(s + "T00:00:00Z").toISOString().slice(0, 10) === s
+  );
+}
+export function addDays(s: string, n: number) {
+  if (!dateValid(s)) throw new Error("Invalid calendar date");
+  const d = new Date(s + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+export function daysUntil(s: string, today = now().slice(0, 10)) {
+  return Math.round((Date.parse(s) - Date.parse(today)) / 86400000);
+}
+export const labels: Record<string, string> = {
+  name: "Student name",
+  institution: "Institution",
+  degree: "Degree / major",
+  programStart: "Program start",
+  programEnd: "Program end",
+  recommendationDate: "DSO recommendation date",
+};
+export function emptyWorkspace(name: string): Workspace {
+  return {
+    revision: 0,
+    demo: false,
+    profile: { name, institution: "", stage: "OPT", degree: "", dso: "" },
+    artifacts: [],
+    facts: [],
+    messages: [],
+    events: [],
+    actions: [],
+    activity: [],
+    requirements: [
+      {
+        id: "i20",
+        title: "Confirm your current I-20",
+        status: "Missing",
+        evidence: "",
+        updatedAt: now(),
+      },
+      {
+        id: "dso",
+        title: "Request your DSO preparation checklist",
+        status: "Missing",
+        evidence: "",
+        updatedAt: now(),
+      },
+      {
+        id: "offer",
+        title: "Collect degree-relevance evidence",
+        status: "Missing",
+        evidence: "",
+        updatedAt: now(),
+      },
+    ],
+    dismissed: {},
+    snapshots: [],
+    chats: [],
+    employment: {
+      employer: "",
+      title: "",
+      start: "",
+      hours: "",
+      relevance: "",
+    },
+    travel: {
+      passportExpiry: "",
+      visaExpiry: "",
+      signatureDate: "",
+      departure: "",
+      notes: "",
+    },
+    consents: [
+      {
+        at: now(),
+        description:
+          "Agreed to private storage and preparation-only product boundaries at account creation.",
+      },
+    ],
+    retention: "until-deleted",
+  };
+}
+export function log(w: Workspace, title: string, detail = "") {
+  w.activity.unshift({ id: uid(), at: now(), title, detail });
+}
+export function sampleI20(end = addDays(now().slice(0, 10), 98)) {
+  return `FICTIONAL SAMPLE — NOT A GOVERNMENT DOCUMENT\nF1Pilot I-20 learning fixture\nStudent name: Maya Chen\nInstitution: Northstar University (fictional)\nDegree: MS Computer Science\nProgram start: ${addDays(end, -730)}\nProgram end: ${end}\nThis fixture contains no SEVIS identifier.\nConfirm each field against its source before preparing a timeline.`;
+}
+export function extract(text: string, artifactId: string): Fact[] {
+  const fields: Record<string, string> = {
+    "Student name": "name",
+    Institution: "institution",
+    "School name": "institution",
+    Degree: "degree",
+    "Program start": "programStart",
+    "Program end": "programEnd",
+    "Program end date": "programEnd",
+    "DSO recommendation date": "recommendationDate",
+  };
+  const facts: Fact[] = [];
+  text.split("\f").forEach((page, p) =>
+    page.split("\n").forEach((line, l) => {
+      for (const [label, key] of Object.entries(fields)) {
+        const match = line.match(
+          new RegExp("^\\s*" + label + "\\s*:\\s*(.+)$", "i"),
+        );
+        if (match) {
+          const value = match[1].trim();
+          if (
+            (key.includes("Date") || key.startsWith("program")) &&
+            !dateValid(value)
+          )
+            continue;
+          facts.push({
+            id: uid(),
+            key,
+            value,
+            originalValue: value,
+            artifactId,
+            page: p + 1,
+            line: l + 1,
+            quote: line,
+            confidence: 0.88,
+            status: "proposed",
+            createdAt: now(),
+            effectiveDate: now().slice(0, 10),
+            sensitivity: "personal",
+            history: [],
+          });
+          break;
+        }
+      }
+    }),
+  );
+  return facts;
+}
+export function addArtifact(
+  w: Workspace,
+  name: string,
+  text: string,
+  category = "I-20",
+  mime = "text/plain",
+  blob?: string,
+) {
+  const prev = w.artifacts.filter((a) => a.category === category).at(-1);
+  const a: Artifact = {
+    id: uid(),
+    name,
+    text,
+    category,
+    mime,
+    blob,
+    createdAt: now(),
+    version: (prev?.version ?? 0) + 1,
+    status: "Awaiting review",
+    supersedes: prev?.id,
+  };
+  w.artifacts.push(a);
+  log(w, "Reading document", `${category} · version ${a.version}`);
+  const facts = category === "I-20" ? extract(text, a.id) : [];
+  w.facts.push(...facts);
+  a.status = facts.length ? "Awaiting confirmation" : "Manual review needed";
+  log(
+    w,
+    "Extracting facts",
+    `${facts.length} proposed fields; no profile changes applied.`,
+  );
+  return a;
+}
+export function confirmFact(w: Workspace, id: string, value: string) {
+  const f = w.facts.find((f) => f.id === id);
+  if (!f || f.status === "superseded") throw new Error("Fact not found");
+  if (!value.trim() || value.length > 300)
+    throw new Error("Enter a valid value");
+  if (
+    (f.key.startsWith("program") || f.key === "recommendationDate") &&
+    !dateValid(value)
+  )
+    throw new Error("Use a valid YYYY-MM-DD date");
+  const start =
+    f.key === "programStart" ? value : confirmed(w, "programStart")?.value;
+  const end =
+    f.key === "programEnd" ? value : confirmed(w, "programEnd")?.value;
+  if (start && end && start >= end)
+    throw new Error("Program end must follow program start");
+  for (const old of w.facts.filter(
+    (x) => x.key === f.key && x.id !== id && x.status === "confirmed",
+  )) {
+    old.status = "superseded";
+    old.history.push({ value: old.value, at: now() });
+  }
+  f.history.push({ value: f.value, at: now() });
+  f.value = value;
+  f.status = "confirmed";
+  f.confirmedAt = now();
+  if (f.key === "institution" || f.key === "degree" || f.key === "name")
+    w.profile[f.key] = value;
+  const artifact = w.artifacts.find((a) => a.id === f.artifactId);
+  if (artifact)
+    artifact.status = w.facts.some(
+      (x) => x.artifactId === artifact.id && x.status === "proposed",
+    )
+      ? "Awaiting confirmation"
+      : "Reviewed";
+  log(
+    w,
+    "Fact confirmed",
+    `${labels[f.key] || f.key} · source preserved; timeline recalculated.`,
+  );
+  recalculate(w);
+}
+export function confirmed(w: Workspace, key: string) {
+  return w.facts.find((f) => f.key === key && f.status === "confirmed");
+}
+export function recalculate(w: Workspace) {
+  if (w.events.length)
+    w.snapshots.push({ at: now(), events: structuredClone(w.events) });
+  const end = confirmed(w, "programEnd");
+  const start = confirmed(w, "programStart");
+  const events: Event[] = [];
+  const push = (
+    id: string,
+    title: string,
+    date: string,
+    explanation: string,
+    factIds: string[],
+    kind = "Preparation",
+    source = OFFICIAL.url,
+  ) =>
+    events.push({
+      id,
+      title,
+      date,
+      explanation,
+      factIds,
+      kind,
+      source,
+      ruleVersion: RULE.version,
+      confidence: "Requires verification",
+      status: "Upcoming",
+    });
+  if (start)
+    push(
+      "start",
+      "Program begins",
+      start.value,
+      "Confirmed document value.",
+      [start.id],
+      "Program",
+      start.artifactId,
+    );
+  if (end) {
+    if (w.profile.stage === "OPT") {
+      push(
+        "prepare",
+        "Prepare your OPT questions",
+        addDays(end.value, RULE.offsets.preparation),
+        "Personal preparation buffer: confirmed program end minus 105 days. Configured demonstration offset, not a filing deadline.",
+        [end.id],
+      );
+      push(
+        "opens",
+        "Illustrative OPT filing window opens",
+        addDays(end.value, RULE.offsets.opens),
+        "Demonstration: program end minus 90 calendar days. Verify current rules and individual circumstances with your DSO.",
+        [end.id],
+        "Government · verify",
+      );
+      push(
+        "closes",
+        "Illustrative outer filing boundary",
+        addDays(end.value, RULE.offsets.closes),
+        "Demonstration: program end plus 60 days. This is NOT a personalized final deadline; DSO recommendation timing and current rules can shorten it.",
+        [end.id],
+        "Government · verify",
+      );
+      const rec = confirmed(w, "recommendationDate");
+      if (rec)
+        push(
+          "recommendation",
+          "Illustrative recommendation boundary",
+          addDays(rec.value, 30),
+          "Demonstration: confirmed recommendation date plus 30 calendar days. Compare both boundaries with your DSO; no eligibility determination.",
+          [end.id, rec.id],
+          "Government · verify",
+        );
+    } else
+      push(
+        "cpt",
+        "Discuss your CPT preparation plan",
+        addDays(end.value, -60),
+        "Personal planning buffer: program end minus 60 days. CPT dates and requirements must be set by your DSO; this is not an authorization calculation.",
+        [end.id],
+      );
+    push(
+      "end",
+      "Program end date",
+      end.value,
+      "Confirmed I-20 field, with original source retained.",
+      [end.id],
+      "Program",
+      end.artifactId,
+    );
+  }
+  for (const m of w.messages.filter((m) => m.status === "approved"))
+    m.dates.forEach((date, i) =>
+      push(
+        `${m.id}-${i}`,
+        m.subject,
+        date,
+        "Explicitly approved date from imported message. Meaning and applicability require review. Original message retained.",
+        [],
+        "University · user reviewed",
+        m.id,
+      ),
+    );
+  if (w.employment.start)
+    push(
+      "offer",
+      "Requested employment start",
+      w.employment.start,
+      "User-entered offer date; does not establish employment authorization.",
+      [],
+      "Employment",
+      "User entry",
+    );
+  if (w.travel.departure)
+    push(
+      "travel",
+      "Planned departure",
+      w.travel.departure,
+      "User-entered itinerary; discuss travel evidence with your DSO.",
+      [],
+      "Travel",
+      "User entry",
+    );
+  w.events = events.sort((a, b) => a.date.localeCompare(b.date));
+  const req = w.requirements.find((r) => r.id === "i20");
+  if (req) {
+    req.status = !end
+      ? "Missing"
+      : ["name", "institution", "degree", "programStart", "programEnd"].every(
+            (key) => confirmed(w, key)?.artifactId === end.artifactId,
+          )
+        ? "Completed"
+        : "In progress";
+    req.evidence = end ? end.artifactId : "";
+  }
+  log(
+    w,
+    "Recalculating timeline",
+    `${events.length} explainable events from confirmed evidence.`,
+  );
+}
+export function importMessage(w: Workspace, subject: string, text: string) {
+  const dates = [...new Set(text.match(/\b\d{4}-\d{2}-\d{2}\b/g) || [])].filter(
+    dateValid,
+  );
+  const requirements = text
+    .split("\n")
+    .filter((l) => /must|required|please|submit|bring/i.test(l));
+  const category = /policy|rule change/i.test(text)
+    ? "Policy change"
+    : dates.length
+      ? "Deadline"
+      : /required|submit/i.test(text)
+        ? "Action required"
+        : /opportunity|workshop/i.test(text)
+          ? "Opportunity"
+          : "Routine information";
+  const m: Message = {
+    id: uid(),
+    subject,
+    text,
+    dates,
+    requirements,
+    links: text.match(/https:\/\/[^\s<>]+/g) || [],
+    office: text.match(/(?:From|Office):\s*(.+)/i)?.[1] || "Unverified sender",
+    category,
+    status: "proposed",
+    createdAt: now(),
+  };
+  w.messages.unshift(m);
+  log(
+    w,
+    "Message reviewed",
+    `${dates.length} proposed dates · waiting for student approval.`,
+  );
+  return m;
+}
+export function cards(w: Workspace, today = now().slice(0, 10)): Card[] {
+  const result: Card[] = [];
+  const pending = w.facts.filter((f) => f.status === "proposed");
+  if (pending.length)
+    result.push({
+      id: "review",
+      title: "Your I-20 has something to confirm.",
+      why: `${pending.length} extracted fields are waiting for your review. They will not change your timeline until confirmed.`,
+      severity: "violet",
+      type: "Confirmation needed",
+      factIds: pending.map((f) => f.id),
+      artifactIds: [...new Set(pending.map((f) => f.artifactId))],
+      confidence: "Unconfirmed · inspect each field",
+      next: "Review the highlighted source and confirm each field.",
+      destination: "Documents",
+    });
+  const conflicts = pending.filter(
+    (f) => confirmed(w, f.key) && confirmed(w, f.key)?.value !== f.value,
+  );
+  if (conflicts.length)
+    result.push({
+      id: "conflict",
+      title: "Two sources tell different stories.",
+      why: "New document evidence differs from a confirmed field. Your verified timeline has been preserved.",
+      severity: "rose",
+      type: "Conflicting evidence",
+      factIds: conflicts.flatMap((f) => [f.id, confirmed(w, f.key)!.id]),
+      artifactIds: conflicts.map((f) => f.artifactId),
+      confidence: "High · exact value comparison",
+      next: "Compare both sources. Ask your DSO if the newer document supersedes the older one.",
+      destination: "Documents",
+    });
+  const next = w.events.find(
+    (e) => daysUntil(e.date, today) >= 0 && daysUntil(e.date, today) <= 30,
+  );
+  if (next)
+    result.push({
+      id: `deadline-${next.id}`,
+      title: "A date worth getting ahead of.",
+      why: `${next.title} is ${daysUntil(next.date, today)} days away. ${next.explanation}`,
+      severity: "amber",
+      type: "Upcoming date",
+      deadline: next.date,
+      factIds: next.factIds,
+      artifactIds: [],
+      confidence: next.confidence,
+      next: "Inspect the calculation and prepare a question for your DSO.",
+      destination: "Timeline",
+    });
+  if (w.requirements.some((r) => r.status === "Missing"))
+    result.push({
+      id: "missing",
+      title: "Let’s close the gaps in your plan.",
+      why: `${w.requirements.filter((r) => r.status === "Missing").length} preparation requirements still need evidence.`,
+      severity: "blue",
+      type: "Missing requirement",
+      factIds: [],
+      artifactIds: [],
+      confidence: "High · stored checklist state",
+      next: "Collect the missing evidence or prepare a DSO email.",
+      destination: "Requirements",
+    });
+  if (w.messages.some((m) => m.status === "proposed"))
+    result.push({
+      id: "inbox",
+      title: "Your university has an update.",
+      why: "An imported message contains proposed information. Review the original before adding dates to your plan.",
+      severity: "violet",
+      type: "Inbox review",
+      factIds: [],
+      artifactIds: [],
+      confidence: "Unverified university content",
+      next: "Review the message and approve or reject its dates.",
+      destination: "Inbox",
+    });
+  const stale = w.artifacts.filter(
+    (a) => daysUntil(a.createdAt.slice(0, 10), today) < -180,
+  );
+  if (stale.length)
+    result.push({
+      id: "stale",
+      title: "Check that these documents are current.",
+      why: `${stale.length} documents were uploaded over 180 days ago. Age alone does not establish expiration.`,
+      severity: "amber",
+      type: "Document freshness",
+      factIds: [],
+      artifactIds: stale.map((a) => a.id),
+      confidence: "High · upload age only",
+      next: "Compare against your latest document and ask your DSO.",
+      destination: "Documents",
+    });
+  const end = confirmed(w, "programEnd");
+  if (
+    end &&
+    w.profile.stage === "OPT" &&
+    w.employment.start &&
+    w.employment.start < end.value
+  )
+    result.push({
+      id: "offer-conflict",
+      title: "Your offer starts before your program ends.",
+      why: "The requested offer date precedes your confirmed program end during an OPT preparation workflow. This needs professional review.",
+      severity: "rose",
+      type: "Professional review",
+      deadline: w.employment.start,
+      factIds: [end.id],
+      artifactIds: [end.artifactId],
+      confidence: "High · date comparison only",
+      next: "Ask your DSO and employer about the date discrepancy.",
+      destination: "Employment",
+    });
+  if (
+    w.actions.some(
+      (a) =>
+        a.status === "approved" &&
+        daysUntil(a.decidedAt!.slice(0, 10), today) < -7,
+    )
+  )
+    result.push({
+      id: "waiting",
+      title: "Ready to follow up?",
+      why: "A locally approved draft is over seven days old. F1Pilot has no evidence it was sent or answered.",
+      severity: "blue",
+      type: "Follow-up check",
+      factIds: [],
+      artifactIds: [],
+      confidence: "Local activity only",
+      next: "Check your mailbox before preparing a follow-up.",
+      destination: "Activity",
+    });
+  return result.filter((c) => !w.dismissed[c.id] || w.dismissed[c.id] < today);
+}
+export function evaluate(w: Workspace) {
+  log(
+    w,
+    "Comparing evidence",
+    `${w.facts.filter((f) => f.status === "confirmed").length} confirmed facts checked.`,
+  );
+  recalculate(w);
+  log(
+    w,
+    "Checking requirements",
+    `${w.requirements.length} requirements checked.`,
+  );
+  const generated = cards(w);
+  log(
+    w,
+    "Preparing recommendations",
+    `${generated.length} active cards generated from stored state.`,
+  );
+  w.lastRun = now();
+  log(w, "Evaluation completed", "No external actions executed.");
+  return generated;
+}
+export function prepare(w: Workspace, topic: string) {
+  const a: Action = {
+    id: uid(),
+    title: `DSO question: ${topic.slice(0, 100)}`,
+    recipient: w.profile.dso,
+    body: `Hello,\n\nI am preparing for ${w.profile.stage} and would appreciate your guidance on: ${topic}.\n\n${confirmed(w, "programEnd") ? `My confirmed I-20 program end date is ${confirmed(w, "programEnd")!.value}.` : "I still need to confirm my program dates."}\n\nCould you confirm the current university requirements, relevant dates, and any documents I should prepare? I understand this preparation timeline is illustrative and needs your review.\n\nThank you,\n${w.profile.name}`,
+    status: "draft",
+    createdAt: now(),
+  };
+  w.actions.unshift(a);
+  log(w, "Email draft prepared", "Waiting for explicit review. No email sent.");
+  return a;
+}
+export function decide(
+  w: Workspace,
+  id: string,
+  decision: "approved" | "cancelled",
+) {
+  const a = w.actions.find((a) => a.id === id);
+  if (!a || a.status !== "draft")
+    throw new Error("Only a pending draft can be decided");
+  a.status = decision;
+  a.decidedAt = now();
+  a.result =
+    decision === "approved"
+      ? "Approved locally. Download the draft and send it yourself; no email service is connected."
+      : "Cancelled. No external action taken.";
+  log(
+    w,
+    decision === "approved" ? "Email draft approved" : "Email draft cancelled",
+    a.result,
+  );
+}
+export function answer(w: Workspace, q: string) {
+  if (/guarantee|am i eligible|am i authorized|legally|will.*approv/i.test(q))
+    return (
+      "I cannot determine eligibility, employment authorization, or guarantee an outcome. Ask your DSO or a qualified immigration professional to review your circumstances. [1]\n\n[1] USCIS official guidance: " +
+      OFFICIAL.url +
+      "\nSource status: requires verification; legal effective date not verified."
+    );
+  const key = /start/i.test(q) ? "programStart" : "programEnd";
+  const f = confirmed(w, key);
+  const relevant = w.events
+    .filter((e) => e.factIds.includes(f?.id || ""))
+    .map((e) => `${e.title}: ${e.date} — ${e.explanation} [2]`)
+    .join("\n");
+  return `${f ? `Verified personal fact: ${labels[key]} is ${f.value}. [1]` : "Missing information: confirm your I-20 program dates before relying on a preparation timeline."}\n\n${/cpt/i.test(q) ? "CPT preparation: collect your offer details and degree-relevance evidence, then ask your DSO for institution-specific instructions. No CPT authorization determination is made. [2]" : relevant || "Review your Documents and Requirements to build an evidence-backed plan."}\n\nAssumptions: your confirmed document is current; dates are illustrative and need DSO review. The local assistant retrieves stored evidence and approved source references; it does not browse or use a language model.\n\n${f ? `[1] ${w.artifacts.find((a) => a.id === f.artifactId)?.name}, page ${f.page}, line ${f.line}; confirmed ${f.confirmedAt?.slice(0, 10)}.\n` : ""}[2] ${OFFICIAL.title}: ${OFFICIAL.url}\nRule ${RULE.version}; effective period: demonstration only; confidence: requires verification. Ask your DSO for current guidance.`;
+}
+export function deleteArtifact(w: Workspace, id: string) {
+  if (!w.artifacts.some((a) => a.id === id))
+    throw new Error("Document not found");
+  w.artifacts = w.artifacts.filter((a) => a.id !== id);
+  w.facts = w.facts.filter((f) => f.artifactId !== id);
+  for (const a of w.artifacts) if (a.supersedes === id) delete a.supersedes;
+  w.snapshots = [];
+  w.chats = [];
+  w.actions = [];
+  for (const r of w.requirements)
+    if (r.evidence === id) {
+      r.evidence = "";
+      r.status = "Missing";
+    }
+  for (const key of ["name", "institution", "degree"] as const) {
+    if (!confirmed(w, key)) w.profile[key] = key === "name" ? "Student" : "";
+  }
+  w.events = [];
+  recalculate(w);
+  log(
+    w,
+    "Document permanently deleted",
+    "Dependent facts, timeline history, chats and drafts removed to prevent retained evidence copies.",
+  );
+}
+export function seedWorkspace() {
+  const w = emptyWorkspace("Maya Chen");
+  w.demo = true;
+  w.profile = {
+    name: "Maya Chen",
+    institution: "Northstar University (fictional)",
+    stage: "OPT",
+    degree: "MS Computer Science",
+    dso: "dso@northstar.example",
+  };
+  const end = addDays(now().slice(0, 10), 98);
+  const a = addArtifact(w, "Maya_I-20_sample.txt", sampleI20(end));
+  for (const f of [...w.facts]) confirmFact(w, f.id, f.value);
+  const revised = addArtifact(
+    w,
+    "Updated_I-20_sample.txt",
+    sampleI20(addDays(end, 7)),
+  );
+  w.facts = w.facts.filter(
+    (f) => f.artifactId !== revised.id || f.key === "programEnd",
+  );
+  const m = importMessage(
+    w,
+    "Complete your OPT preparation workshop",
+    `From: Northstar International Student Office (fictional)\nPlease complete our preparation workshop by ${addDays(now().slice(0, 10), 12)}.\nRequired: current I-20 and degree completion checklist.\nProgram end mentioned by office: ${addDays(end, 7)}\nThis fictional instruction is for the demo only.`,
+  );
+  m.status = "approved";
+  m.dates = m.dates.slice(0, 1);
+  w.requirements.push({
+    id: "workshop",
+    title: "Complete Northstar’s OPT workshop (fictional)",
+    status: "Missing",
+    evidence: m.id,
+    updatedAt: now(),
+  });
+  w.employment = {
+    employer: "Aster Labs (fictional)",
+    title: "Software engineering intern",
+    start: addDays(end, -10),
+    hours: "20",
+    relevance:
+      "Draft: distributed systems work related to computer science coursework.",
+  };
+  addArtifact(
+    w,
+    "Aster_offer_sample.txt",
+    `FICTIONAL OFFER\nEmployer: Aster Labs\nStart: ${w.employment.start}\nRole: Software engineering intern`,
+    "Offer letter",
+  );
+  const action = prepare(
+    w,
+    "Which documents should I bring to my appointment?",
+  );
+  decide(w, action.id, "approved");
+  w.requirements[0].evidence = a.id;
+  evaluate(w);
+  return w;
+}
