@@ -7,3 +7,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## F1Pilot permanent product invariants
+
+Read docs/PRODUCT_REQUIREMENTS.md and docs/AI_SAFETY_AND_LEGAL_BOUNDARIES.md before changing domain behavior. Preserve source provenance, explicit fact confirmation, deterministic versioned date calculations, tenant isolation, user export/deletion, and specific approval before external effects. Never make legal eligibility or authorization determinations. Keep future modules narrow and honestly labeled until their real flows exist.

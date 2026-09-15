@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useId } from "react";
 import {
   Sun,
   CalendarDays,
@@ -93,14 +93,17 @@ function Source() {
   );
 }
 function Modal({
+  error,
   title,
   children,
   close,
 }: {
+  error?: string;
   title: string;
   children: React.ReactNode;
   close: () => void;
 }) {
+  const headingId = useId();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = ref.current;
@@ -111,17 +114,23 @@ function Modal({
     <dialog
       ref={ref}
       className="modal"
+      aria-labelledby={headingId}
       onCancel={close}
       onClick={(e) => {
         if (e.target === ref.current) close();
       }}
     >
       <div className="modal-heading">
-        <h2>{title}</h2>
+        <h2 id={headingId}>{title}</h2>
         <button aria-label="Close dialog" onClick={close}>
           <X size={20} />
         </button>
       </div>
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
       {children}
     </dialog>
   );
@@ -1573,6 +1582,7 @@ export default function WorkspaceUI({
       </div>
       {activeDoc && (
         <DocumentModal
+          error={error}
           artifact={activeDoc}
           w={w}
           busy={!!busy}
@@ -1596,7 +1606,11 @@ export default function WorkspaceUI({
         />
       )}
       {event && (
-        <Modal title={event.title} close={() => setEvent(undefined)}>
+        <Modal
+          error={error}
+          title={event.title}
+          close={() => setEvent(undefined)}
+        >
           <span className="badge violet">
             {event.kind} · {fmt(event.date)}
           </span>
@@ -1645,7 +1659,11 @@ export default function WorkspaceUI({
         </Modal>
       )}
       {card && (
-        <Modal title={card.title} close={() => setCard(undefined)}>
+        <Modal
+          error={error}
+          title={card.title}
+          close={() => setCard(undefined)}
+        >
           <span className={`badge ${card.severity}`}>
             {card.type} ·{" "}
             {card.severity === "rose" ? "High priority" : "Review recommended"}
@@ -1720,6 +1738,7 @@ export default function WorkspaceUI({
       )}
       {action && (
         <Modal
+          error={error}
           title="A draft, ready for your decision."
           close={() => setAction(undefined)}
         >
@@ -1785,6 +1804,7 @@ export default function WorkspaceUI({
       )}
       {tour && (
         <Modal
+          error={error}
           title="A clearer path in four steps."
           close={() => setTour(false)}
         >
@@ -1831,6 +1851,7 @@ export default function WorkspaceUI({
       )}
       {deleteTarget && (
         <Modal
+          error={error}
           title={
             deleteTarget === "reset"
               ? "Reset this demo?"
@@ -1878,6 +1899,7 @@ export default function WorkspaceUI({
   );
 }
 function DocumentModal({
+  error,
   artifact: a,
   w,
   busy,
@@ -1886,6 +1908,7 @@ function DocumentModal({
   propose,
   remove,
 }: {
+  error: string;
   artifact: Artifact;
   w: Workspace;
   busy: boolean;
@@ -1897,7 +1920,7 @@ function DocumentModal({
   const [highlight, setHighlight] = useState<{ page: number; line: number }>();
   const fields = w.facts.filter((f) => f.artifactId === a.id);
   return (
-    <Modal title={a.name} close={close}>
+    <Modal error={error} title={a.name} close={close}>
       <div className="document-detail-meta">
         <span className="badge violet">{a.category}</span>
         <span>

@@ -12,7 +12,11 @@ export const dataDir = path.resolve(
   /* turbopackIgnore: true */ process.env.F1PILOT_DATA_DIR || "./data",
 );
 mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+chmodSync(dataDir, 0o700);
 export const db = new DatabaseSync(path.join(dataDir, "f1pilot.sqlite"));
+// Build workers and a scheduled runner may open the same local database.
+// Wait for short atomic writes rather than failing concurrent initialization.
+db.exec("PRAGMA busy_timeout = 5000");
 chmodSync(path.join(dataDir, "f1pilot.sqlite"), 0o600);
 db.exec(`PRAGMA journal_mode = DELETE; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;
 CREATE TABLE IF NOT EXISTS migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
